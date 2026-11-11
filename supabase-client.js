@@ -203,7 +203,10 @@ profileDialog.innerHTML=`
  <div class="modal-head"><h2>O meu perfil</h2><button class="close" id="profileClose">×</button></div>
  <form id="profileForm">
   <div class="field"><label for="profileName">Nome público *</label><input id="profileName" maxlength="80" required placeholder="Como quer ser conhecido"></div>
-  <div class="field"><label for="profileLocation">Localidade</label><input id="profileLocation" maxlength="100" placeholder="Ex.: Lisboa"></div>
+  <div class="form-row">
+   <div class="field"><label for="profileRegion">Distrito / Região *</label><input id="profileRegion" maxlength="100" required placeholder="Ex.: Setúbal"></div>
+   <div class="field"><label for="profileMunicipality">Concelho / Cidade *</label><input id="profileMunicipality" maxlength="100" required placeholder="Ex.: Barreiro"></div>
+  </div>
   <div class="field"><label for="profileAvatar">Fotografia (URL da imagem)</label><input id="profileAvatar" type="url" placeholder="https://..."></div>
   <div class="field"><label for="profileBio">Sobre mim</label><textarea id="profileBio" maxlength="500" placeholder="Apresente-se aos compradores…"></textarea></div>
   <p id="profileStatus" class="note" aria-live="polite"></p>
@@ -227,7 +230,10 @@ editListingDialog.innerHTML=`
    <div class="field"><label for="editPrice">Preço (€) *</label><input id="editPrice" type="number" min="0" step="0.01" required></div>
    <div class="field"><label for="editCategory">Categoria *</label><select id="editCategory" required></select></div>
   </div>
-  <div class="field"><label for="editLocation">Localidade *</label><input id="editLocation" required maxlength="100"></div>
+  <div class="form-row">
+   <div class="field"><label for="editRegion">Distrito / Região *</label><input id="editRegion" required maxlength="100"></div>
+   <div class="field"><label for="editMunicipality">Concelho / Cidade *</label><input id="editMunicipality" required maxlength="100"></div>
+  </div>
   <div class="field"><label for="editDescription">Descrição</label><textarea id="editDescription" maxlength="2000"></textarea></div>
   <div class="field"><label for="editImage">Imagem principal (URL)</label><input id="editImage" type="url" placeholder="https://..."></div>
   <p id="editListingStatus" class="note" aria-live="polite"></p>
@@ -252,9 +258,10 @@ async function loadOwnProfile(){
  const avatar=data?.avatar_url;
  document.getElementById("accountSummary").innerHTML=`
   <div style="width:64px;height:64px;flex:0 0 64px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:25px">${avatar?`<img src="${escapeText(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover">`:"👤"}</div>
-  <div><strong style="font-size:18px">${escapeText(name)}</strong><div class="meta">${escapeText(data?.location||"Adicione a sua localidade")}</div><div class="meta">Membro KUMPRALL</div></div>`;
+  <div><strong style="font-size:18px">${escapeText(name)}</strong><div class="meta">${escapeText([data?.municipality,data?.region].filter(Boolean).join(", ")||"Adicione a sua localização")}</div><div class="meta">Membro KUMPRALL</div></div>`;
  document.getElementById("profileName").value=data?.display_name||"";
- document.getElementById("profileLocation").value=data?.location||"";
+ document.getElementById("profileRegion").value=data?.region||"";
+ document.getElementById("profileMunicipality").value=data?.municipality||"";
  document.getElementById("profileAvatar").value=data?.avatar_url||"";
  document.getElementById("profileBio").value=data?.bio||"";
  return data;
@@ -265,14 +272,14 @@ async function showMyListings(){
  const box=document.getElementById("myListingsContent");
  box.textContent="A carregar os seus anúncios…";
  const {data,error}=await supabase.from("kumprall_listings")
-  .select("id,title,price,category,location,description,image_url,status,created_at")
+  .select("id,title,price,category,location,region,municipality,description,image_url,status,created_at")
   .eq("owner_id",currentUser.id).order("created_at",{ascending:false});
  if(error){box.textContent="Erro ao carregar anúncios: "+error.message;return;}
  if(!data.length){box.innerHTML='<div class="empty">Ainda não publicou anúncios. Clique em «Anunciar» para começar.</div>';return;}
  box.innerHTML=data.map(item=>`
   <article style="display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #e5eee8">
    <div style="width:76px;height:68px;flex:0 0 76px;border-radius:10px;overflow:hidden;background:#edf5f0;display:grid;place-items:center">${item.image_url?`<img src="${escapeText(item.image_url)}" style="width:100%;height:100%;object-fit:cover" alt="">`:"📦"}</div>
-   <div style="flex:1;min-width:0"><strong>${escapeText(item.title)}</strong><div style="font-weight:800;color:#087B59">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(item.price))}</div><div class="meta">${escapeText(item.location)} · ${escapeText(item.category)} · ${item.status==="active"?"Activo":item.status==="sold"?"Vendido":"Inactivo"}</div>
+   <div style="flex:1;min-width:0"><strong>${escapeText(item.title)}</strong><div style="font-weight:800;color:#087B59">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(item.price))}</div><div class="meta">${escapeText([item.municipality,item.region].filter(Boolean).join(", ")||item.location)} · ${escapeText(item.category)} · ${item.status==="active"?"Activo":item.status==="sold"?"Vendido":"Inactivo"}</div>
    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
     <button class="btn btn-light" data-edit-listing="${item.id}" style="padding:7px 10px">Editar</button>
     ${item.status==="active"?'<button class="btn btn-light" data-listing-status="sold" data-id="'+item.id+'" style="padding:7px 10px">Marcar vendido</button>':'<button class="btn btn-light" data-listing-status="active" data-id="'+item.id+'" style="padding:7px 10px">Reactivar</button>'}
@@ -292,7 +299,7 @@ async function openPublicProfile(userId){
  box.innerHTML=`
   <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
    <div style="width:72px;height:72px;flex:0 0 72px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:28px">${profile?.avatar_url?`<img src="${escapeText(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover" alt="">`:"👤"}</div>
-   <div><h3 style="margin:0 0 4px">${escapeText(display)}</h3><div class="meta">${escapeText(profile?.location||"Portugal")} · Membro KUMPRALL</div></div>
+   <div><h3 style="margin:0 0 4px">${escapeText(display)}</h3><div class="meta">${escapeText([profile?.municipality,profile?.region].filter(Boolean).join(", ")||"Portugal")} · Membro KUMPRALL</div></div>
   </div>
   <p style="white-space:pre-wrap;color:#526C60">${escapeText(profile?.bio||"Este vendedor ainda não adicionou uma apresentação.")}</p>
   <h3>Anúncios activos (${ads.length})</h3>
@@ -313,12 +320,13 @@ document.getElementById("viewPublicProfileButton").addEventListener("click",()=>
 document.getElementById("profileForm").addEventListener("submit",async event=>{
  event.preventDefault();if(!currentUser)return;
  const display_name=document.getElementById("profileName").value.trim();
- const location=document.getElementById("profileLocation").value.trim();
+ const region=document.getElementById("profileRegion").value.trim();
+ const municipality=document.getElementById("profileMunicipality").value.trim();
  const avatar_url=document.getElementById("profileAvatar").value.trim()||null;
  const bio=document.getElementById("profileBio").value.trim();
  if(avatar_url&&!/^https?:\/\//i.test(avatar_url))return profileStatus("O endereço da fotografia deve começar por https:// ou http://.",true);
  const button=event.submitter;button.disabled=true;profileStatus("A guardar perfil…");
- const {error}=await supabase.from("kumprall_profiles").upsert({user_id:currentUser.id,display_name,location,bio,avatar_url},{onConflict:"user_id"});
+ const {error}=await supabase.from("kumprall_profiles").upsert({user_id:currentUser.id,display_name,region,municipality,location:municipality+", "+region,bio,avatar_url},{onConflict:"user_id"});
  if(error)profileStatus("Não foi possível guardar: "+error.message,true);
  else{profileStatus("Perfil guardado com sucesso.");await loadOwnProfile();}
  button.disabled=false;
@@ -332,7 +340,8 @@ document.getElementById("myListingsContent").addEventListener("click",async even
   document.getElementById("editListingId").value=item.id;
   document.getElementById("editTitle").value=item.title;
   document.getElementById("editPrice").value=item.price;
-  document.getElementById("editLocation").value=item.location;
+  document.getElementById("editRegion").value=item.region||"";
+  document.getElementById("editMunicipality").value=item.municipality||item.location||"";
   document.getElementById("editDescription").value=item.description||"";
   document.getElementById("editImage").value=item.image_url||item.image||"";
   document.getElementById("editCategory").innerHTML=[...new Set(["Veículos","Imóveis","Eletrónica","Casa e Jardim","Moda","Desporto","Lazer",item.category])].map(v=>'<option value="'+escapeText(v)+'">'+escapeText(v)+'</option>').join("");
@@ -365,7 +374,9 @@ document.getElementById("editListingForm").addEventListener("submit",async event
   title:document.getElementById("editTitle").value.trim(),
   price:Number(document.getElementById("editPrice").value),
   category:document.getElementById("editCategory").value,
-  location:document.getElementById("editLocation").value.trim(),
+  region:document.getElementById("editRegion").value.trim(),
+  municipality:document.getElementById("editMunicipality").value.trim(),
+  location:document.getElementById("editMunicipality").value.trim()+", "+document.getElementById("editRegion").value.trim(),
   description:document.getElementById("editDescription").value.trim(),
   image_url:image
  }).eq("id",editingListingId).eq("owner_id",currentUser.id);
@@ -384,7 +395,7 @@ function openListingDetails(id) {
   document.getElementById("detailContent").innerHTML = `
     ${image}
     <div style="font-size:25px;font-weight:850;color:#087B59;margin-bottom:8px">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(item.price)}</div>
-    <p style="color:#64766F;margin:0 0 12px">${escapeText(item.location)} · ${escapeText(item.category)}</p>
+    <p style="color:#64766F;margin:0 0 12px">${escapeText([item.municipality,item.region].filter(Boolean).join(", ")||item.location)} · ${escapeText(item.category)}</p>
     <button class="btn btn-light" id="openSellerProfile" style="margin-bottom:14px">Ver perfil do vendedor</button>
     <h3 style="margin:0 0 7px">Descrição</h3>
     <p style="white-space:pre-wrap;line-height:1.6;margin:0 0 18px">${escapeText(item.description || "O vendedor não adicionou uma descrição.")}</p>
@@ -401,7 +412,7 @@ function showListings(rows) {
   const uniqueRows = [...new Map((rows || []).filter(row => row?.id).map(row => [String(row.id), row])).values()];
   databaseListings = uniqueRows.map(row => ({
     id: row.id, owner_id: row.owner_id, title: row.title, price: Number(row.price), category: row.category,
-    location: row.location, description: row.description || "",
+    location: row.location, region: row.region || "", municipality: row.municipality || "", description: row.description || "",
     image: row.image_url || "", date: new Date(row.created_at).getTime()
   }));
   const grid = document.getElementById("listings");
@@ -427,7 +438,7 @@ async function refreshListings() {
   // Ignora respostas antigas se duas actualizações forem iniciadas quase ao mesmo tempo.
   const requestVersion = ++listingsRequestVersion;
   const { data, error } = await supabase.from("kumprall_listings")
-    .select("id,owner_id,title,description,price,category,location,image_url,status,created_at")
+    .select("id,owner_id,title,description,price,category,location,region,municipality,image_url,status,created_at")
     .eq("status","active").order("created_at",{ascending:false}).limit(200);
   if (requestVersion !== listingsRequestVersion) return;
   if (error) {
@@ -487,9 +498,11 @@ form.addEventListener("submit", async event => {
   const title = String(data.get("title") || "").trim();
   const price = Number(form.querySelector('[name="price"]').valueAsNumber);
   const category = String(data.get("category") || "");
-  const locationText = String(data.get("location") || "").trim();
-  if (!title || !Number.isFinite(price) || price < 0 || !category || !locationText) {
-    setListingStatus("Preencha o título, preço, categoria e localidade correctamente.", true);
+  const region = String(data.get("region") || "").trim();
+  const municipality = String(data.get("municipality") || "").trim();
+  const locationText = [municipality, region].filter(Boolean).join(", ");
+  if (!title || !Number.isFinite(price) || price < 0 || !category || !region || !municipality) {
+    setListingStatus("Preencha o título, preço, categoria, distrito/região e concelho/cidade.", true);
     return;
   }
   const files = [...imageField.files];
@@ -514,6 +527,8 @@ form.addEventListener("submit", async event => {
       price,
       category,
       location: locationText,
+      region,
+      municipality,
       description: String(data.get("description") || "").trim(),
       image_url: uploadedUrls[0] || null
     });
