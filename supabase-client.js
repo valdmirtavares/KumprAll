@@ -290,25 +290,57 @@ async function showMyListings(){
   </article>`).join("");
 }
 async function openPublicProfile(userId){
- const box=document.getElementById("publicProfileContent");box.textContent="A carregar perfil…";publicProfileDialog.showModal();
+ const box=document.getElementById("publicProfileContent");
+ publicProfileDialog.style.width="min(960px, calc(100% - 24px))";
+ publicProfileDialog.style.maxHeight="92vh";
+ box.style.maxHeight="calc(92vh - 70px)";
+ box.style.overflowY="auto";
+ box.style.padding="0 0 28px";
+ box.innerHTML='<div style="padding:35px;text-align:center">A carregar perfil…</div>';
+ publicProfileDialog.showModal();
  const [{data:profile,error:pError},{data:ads,error:aError}]=await Promise.all([
-  supabase.from("kumprall_profiles").select("display_name,location,region,municipality,bio,avatar_url,created_at").eq("user_id",userId).maybeSingle(),
-  supabase.from("kumprall_listings").select("id,title,price,category,location,image_url,created_at").eq("owner_id",userId).eq("status","active").order("created_at",{ascending:false})
+  supabase.from("kumprall_profiles").select("display_name,location,region,municipality,bio,avatar_url,created_at,verification_status,verified_at,verification_expires_at").eq("user_id",userId).maybeSingle(),
+  supabase.from("kumprall_listings").select("id,title,price,category,location,region,municipality,image_url,created_at").eq("owner_id",userId).eq("status","active").order("created_at",{ascending:false})
  ]);
- if(pError||aError){box.textContent="Não foi possível abrir este perfil.";return;}
+ if(pError||aError){box.innerHTML='<p style="padding:24px">Não foi possível abrir este perfil. Tente novamente.</p>';return;}
  const display=profile?.display_name||"Vendedor KUMPRALL";
+ const location=[profile?.municipality,profile?.region].filter(Boolean).join(", ")||"Localização não indicada";
+ const joined=profile?.created_at?new Date(profile.created_at).toLocaleDateString("pt-PT",{month:"long",year:"numeric"}):"";
+ const verified=profile?.verification_status==="verified"&&(!profile?.verification_expires_at||new Date(profile.verification_expires_at)>new Date());
+ const expiry=profile?.verification_expires_at?new Date(profile.verification_expires_at).toLocaleDateString("pt-PT"):"";
+ const avatar=profile?.avatar_url?'<img src="'+escapeText(profile.avatar_url)+'" alt="Fotografia de '+escapeText(display)+'" style="width:100%;height:100%;object-fit:cover">':'<span style="font-size:58px">👤</span>';
  box.innerHTML=`
-  <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
-   <div style="width:72px;height:72px;flex:0 0 72px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:28px">${profile?.avatar_url?`<img src="${escapeText(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover" alt="">`:"👤"}</div>
-   <div><h3 style="margin:0 0 4px">${escapeText(display)}</h3><div class="meta">${escapeText([profile?.municipality,profile?.region].filter(Boolean).join(", ")||"Portugal")} · Membro KUMPRALL</div></div>
+  <div style="height:190px;background:linear-gradient(120deg,#064e3b,#0ba879 55%,#c5a45d);position:relative">
+   <div style="position:absolute;inset:auto 0 0;padding:20px 26px;color:white;font-size:13px;font-weight:800;letter-spacing:2px">KUMPRALL · PERFIL PÚBLICO</div>
   </div>
-  <p style="white-space:pre-wrap;color:#526C60">${escapeText(profile?.bio||"Este vendedor ainda não adicionou uma apresentação.")}</p>
-  <h3>Anúncios activos (${ads.length})</h3>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">${ads.map(ad=>`
-   <article style="border:1px solid #e5eee8;border-radius:12px;overflow:hidden">
-    ${ad.image_url?`<img src="${escapeText(ad.image_url)}" style="width:100%;height:100px;object-fit:cover" alt="">`:'<div style="height:100px;background:#edf5f0;display:grid;place-items:center">📦</div>'}
-    <div style="padding:9px"><strong>${escapeText(ad.title)}</strong><div style="color:#087B59;font-weight:800">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(ad.price))}</div><div class="meta">${escapeText(ad.location)}</div></div>
-   </article>`).join("")||'<p class="meta">Este vendedor ainda não tem anúncios activos.</p>'}</div>`;
+  <div style="padding:0 28px">
+   <div style="display:flex;align-items:flex-end;gap:20px;margin-top:-65px;position:relative;flex-wrap:wrap">
+    <div style="width:132px;height:132px;flex:0 0 132px;border-radius:50%;border:6px solid white;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;box-shadow:0 5px 20px #0002">${avatar}</div>
+    <div style="padding:0 0 10px;flex:1;min-width:180px">
+     <h2 style="font-size:28px;margin:0 0 5px;color:#183a2d">${escapeText(display)}</h2>
+     <div class="meta">${escapeText(location)} · ${joined?"Membro desde "+escapeText(joined):"Membro KUMPRALL"}</div>
+    </div>
+    <div style="padding-bottom:12px">${verified?'<span style="display:inline-flex;align-items:center;gap:6px;background:#e6f7ee;color:#087b59;padding:9px 13px;border-radius:30px;font-weight:800">✓ Identidade verificada</span>':'<span style="display:inline-flex;align-items:center;gap:6px;background:#f2f4f3;color:#64766f;padding:9px 13px;border-radius:30px;font-weight:700">Perfil não verificado</span>'}</div>
+   </div>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:22px 0">
+    <div style="padding:15px;border:1px solid #e3eee8;border-radius:14px"><div class="meta">Anúncios activos</div><strong style="font-size:23px">${ads.length}</strong></div>
+    <div style="padding:15px;border:1px solid #e3eee8;border-radius:14px"><div class="meta">Localização</div><strong>${escapeText(profile?.municipality||"Por indicar")}</strong></div>
+    <div style="padding:15px;border:1px solid #e3eee8;border-radius:14px"><div class="meta">Estado de confiança</div><strong>${verified?"Verificação válida":"Por verificar"}</strong></div>
+   </div>
+   <section style="padding:20px;border:1px solid #e3eee8;border-radius:16px;margin-bottom:24px">
+    <h3 style="margin:0 0 9px">Sobre este utilizador</h3>
+    <p style="white-space:pre-wrap;color:#526c60;margin:0">${escapeText(profile?.bio||"Este utilizador ainda não adicionou uma apresentação.")}</p>
+    ${verified?'<p class="meta" style="margin:12px 0 0">Verificação válida'+(expiry?' até '+escapeText(expiry):'')+'. A verificação confirma os dados de identidade apresentados à KUMPRALL; não garante os produtos, pagamentos ou o resultado de uma negociação.</p>':'<p class="meta" style="margin:12px 0 0">A KUMPRALL ainda não verificou a identidade deste utilizador. Confirme sempre os detalhes antes de efectuar pagamentos.</p>'}
+   </section>
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <h3 style="margin:0">Anúncios de ${escapeText(display)} (${ads.length})</h3>
+   </div>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">${ads.map(ad=>`
+    <article style="border:1px solid #e5eee8;border-radius:14px;overflow:hidden;background:white">
+     ${ad.image_url?'<img src="'+escapeText(ad.image_url)+'" style="width:100%;height:145px;object-fit:cover" alt="">':'<div style="height:145px;background:#edf5f0;display:grid;place-items:center;font-size:40px">📦</div>'}
+     <div style="padding:12px"><strong>${escapeText(ad.title)}</strong><div style="color:#087B59;font-weight:850;margin-top:5px">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(ad.price))}</div><div class="meta">${escapeText([ad.municipality,ad.region].filter(Boolean).join(", ")||ad.location||"")}</div></div>
+    </article>`).join("")||'<p class="meta">Este utilizador ainda não tem anúncios activos.</p>'}</div>
+  </div>`;
 }
 accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();});
 document.getElementById("accountClose").addEventListener("click",()=>accountDialog.close());
