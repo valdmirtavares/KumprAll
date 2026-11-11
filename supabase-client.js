@@ -94,6 +94,30 @@ imageField.addEventListener("change", () => {
 function escapeText(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 }
+const detailDialog = document.createElement("dialog");
+detailDialog.id = "listingDetailDialog";
+detailDialog.innerHTML = `
+  <div class="modal-head"><h2 id="detailTitle">Detalhes do anúncio</h2><button class="close" id="detailClose" aria-label="Fechar">×</button></div>
+  <div id="detailContent" style="padding:20px 23px 24px"></div>`;
+document.body.append(detailDialog);
+document.getElementById("detailClose").addEventListener("click", () => detailDialog.close());
+
+function openListingDetails(id) {
+  const item = databaseListings.find(listing => String(listing.id) === String(id));
+  if (!item) return;
+  document.getElementById("detailTitle").textContent = item.title;
+  const image = item.image
+    ? `<img src="${escapeText(item.image)}" alt="${escapeText(item.title)}" style="width:100%;max-height:340px;object-fit:contain;border-radius:12px;background:#f2f6f3;margin-bottom:16px">`
+    : "";
+  document.getElementById("detailContent").innerHTML = `
+    ${image}
+    <div style="font-size:25px;font-weight:850;color:#087B59;margin-bottom:8px">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(item.price)}</div>
+    <p style="color:#64766F;margin:0 0 12px">${escapeText(item.location)} · ${escapeText(item.category)}</p>
+    <h3 style="margin:0 0 7px">Descrição</h3>
+    <p style="white-space:pre-wrap;line-height:1.6;margin:0">${escapeText(item.description || "O vendedor não adicionou uma descrição.")}</p>`;
+  detailDialog.showModal();
+}
+
 function showListings(rows) {
   databaseListings = (rows || []).map(row => ({
     id: row.id, title: row.title, price: Number(row.price), category: row.category,
@@ -112,7 +136,7 @@ function showListings(rows) {
   else if (sort === "high") rowsToShow.sort((a,b) => b.price-a.price);
   else rowsToShow.sort((a,b) => b.date-a.date);
   grid.innerHTML = rowsToShow.length ? rowsToShow.map(item => `
-    <article class="card">
+    <article class="card" data-listing-id="${escapeText(item.id)}" tabindex="0" role="button" aria-label="Ver detalhes de ${escapeText(item.title)}" style="cursor:pointer">
       <div class="photo">${item.image ? `<img src="${escapeText(item.image)}" alt="${escapeText(item.title)}" onerror="this.remove()">` : "<span>📦</span>"}</div>
       <div class="card-body"><div class="price">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(item.price)}</div>
       <h3>${escapeText(item.title)}</h3><div class="meta">${escapeText(item.location)} · ${escapeText(item.category)}</div>
@@ -227,6 +251,12 @@ form.addEventListener("submit", async event => {
   }
 }, true);
 
+listingGrid.addEventListener("keydown", event => {
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-listing-id]")) {
+    event.preventDefault();
+    openListingDetails(event.target.dataset.listingId);
+  }
+});
 document.getElementById("searchInput").addEventListener("input", () => showListings(databaseListings));
 document.getElementById("sortSelect").addEventListener("change", () => showListings(databaseListings));
 document.getElementById("categories").addEventListener("click", () => setTimeout(() => showListings(databaseListings),0));
