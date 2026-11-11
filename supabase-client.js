@@ -119,6 +119,64 @@ detailDialog.innerHTML = `
 document.body.append(detailDialog);
 document.getElementById("detailClose").addEventListener("click", () => detailDialog.close());
 
+const chatDialog = document.createElement("dialog");
+chatDialog.id = "kumprallChatDialog";
+chatDialog.innerHTML = `
+  <div class="modal-head"><h2 id="chatHeading">Conversa KUMPRALL</h2><button class="close" id="chatClose" aria-label="Fechar">×</button></div>
+  <div id="chatMessages" style="padding:16px 20px;max-height:48vh;overflow:auto;background:#f7faf8"></div>
+  <form id="chatForm" style="padding:14px 20px;display:flex;gap:8px;align-items:end">
+    <textarea id="chatInput" required maxlength="4000" placeholder="Escreva a sua mensagem..." style="flex:1;min-height:64px;border:1px solid #dce5e0;border-radius:10px;padding:10px"></textarea>
+    <button class="btn btn-primary" type="submit">Enviar</button>
+  </form>
+  <p id="chatStatus" class="note" style="padding:0 20px" aria-live="polite"></p>`;
+document.body.append(chatDialog);
+document.getElementById("chatClose").addEventListener("click",()=>chatDialog.close());
+let activeConversationId = null;
+async function loadConversationMessages() {
+  const box=document.getElementById("chatMessages");
+  const {data,error}=await supabase.from("kumprall_messages").select("id,sender_id,body,created_at").eq("conversation_id",activeConversationId).order("created_at",{ascending:true});
+  if(error){box.textContent="Não foi possível carregar as mensagens: "+error.message;return;}
+  box.innerHTML=data.length?data.map(m=>`<div style="display:flex;justify-content:${m.sender_id===currentUser.id?"flex-end":"flex-start"};margin:8px 0"><div style="max-width:85%;padding:10px 13px;border-radius:14px;background:${m.sender_id===currentUser.id?"#dff5e9":"white"};white-space:pre-wrap;overflow-wrap:anywhere">${escapeText(m.body)}<div style="font-size:10px;color:#718078;margin-top:5px">${new Date(m.created_at).toLocaleString("pt-PT")}</div></div></div>`).join(""):'<p style="color:#64766F;text-align:center">Esta conversa ainda não tem mensagens.</p>';
+  box.scrollTop=box.scrollHeight;
+}
+async function startConversation(item) {
+  if(!currentUser){detailDialog.close();authMessage("Entre ou crie uma conta para enviar mensagens ao vendedor.");authDialog.showModal();return;}
+  if(currentUser.id===item.owner_id){document.getElementById("detailContent").insertAdjacentHTML("beforeend",'<p class="note">Este é o seu anúncio. Não pode enviar uma mensagem a si próprio.</p>');return;}
+  const button=document.getElementById("contactSellerButton");
+  button.disabled=true;button.textContent="A abrir conversa…";
+  try{
+    let {data:conversation,error}=await supabase.from("kumprall_conversations").select("id").eq("listing_id",item.id).eq("buyer_id",currentUser.id).eq("seller_id",item.owner_id).maybeSingle();
+    if(error) throw error;
+    if(!conversation){
+      const created=await supabase.from("kumprall_conversations").insert({listing_id:item.id,buyer_id:currentUser.id,seller_id:item.owner_id}).select("id").single();
+      if(created.error && created.error.code!=="23505") throw created.error;
+      conversation=created.data;
+      if(!conversation){
+        const retry=await supabase.from("kumprall_conversations").select("id").eq("listing_id",item.id).eq("buyer_id",currentUser.id).eq("seller_id",item.owner_id).single();
+        if(retry.error) throw retry.error;
+        conversation=retry.data;
+      }
+    }
+    activeConversationId=conversation.id;
+    document.getElementById("chatHeading").textContent="Mensagem sobre: "+item.title;
+    document.getElementById("chatStatus").textContent="";
+    detailDialog.close();chatDialog.showModal();await loadConversationMessages();
+  }catch(error){
+    document.getElementById("chatStatus").textContent="Não foi possível iniciar a conversa: "+error.message;
+  }finally{button.disabled=false;button.textContent="Enviar mensagem ao vendedor";}
+}
+document.getElementById("chatForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  if(!activeConversationId||!currentUser)return;
+  const input=document.getElementById("chatInput"),button=event.submitter;
+  const body=input.value.trim();if(!body)return;
+  button.disabled=true;document.getElementById("chatStatus").textContent="A enviar…";
+  const {error}=await supabase.from("kumprall_messages").insert({conversation_id:activeConversationId,sender_id:currentUser.id,body});
+  if(error)document.getElementById("chatStatus").textContent="Erro ao enviar: "+error.message;
+  else{input.value="";document.getElementById("chatStatus").textContent="Mensagem enviada.";await loadConversationMessages();}
+  button.disabled=false;
+});
+
 function openListingDetails(id) {
   const item = databaseListings.find(listing => String(listing.id) === String(id));
   if (!item) return;
@@ -131,13 +189,16 @@ function openListingDetails(id) {
     <div style="font-size:25px;font-weight:850;color:#087B59;margin-bottom:8px">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(item.price)}</div>
     <p style="color:#64766F;margin:0 0 12px">${escapeText(item.location)} · ${escapeText(item.category)}</p>
     <h3 style="margin:0 0 7px">Descrição</h3>
-    <p style="white-space:pre-wrap;line-height:1.6;margin:0">${escapeText(item.description || "O vendedor não adicionou uma descrição.")}</p>`;
+    <p style="white-space:pre-wrap;line-height:1.6;margin:0 0 18px">${escapeText(item.description || "O vendedor não adicionou uma descrição.")}</p>
+    <button class="btn btn-primary" id="contactSellerButton" style="width:100%">Enviar mensagem ao vendedor</button>
+    <p class="note" style="margin:10px 0 0">Negocie com segurança através das mensagens da KUMPRALL.</p>`;
+  document.getElementById("contactSellerButton").addEventListener("click", () => startConversation(item));
   detailDialog.showModal();
 }
 
 function showListings(rows) {
   databaseListings = (rows || []).map(row => ({
-    id: row.id, title: row.title, price: Number(row.price), category: row.category,
+    id: row.id, owner_id: row.owner_id, title: row.title, price: Number(row.price), category: row.category,
     location: row.location, description: row.description || "",
     image: row.image_url || "", date: new Date(row.created_at).getTime()
   }));
@@ -162,7 +223,7 @@ function showListings(rows) {
 }
 async function refreshListings() {
   const { data, error } = await supabase.from("kumprall_listings")
-    .select("id,title,description,price,category,location,image_url,status,created_at")
+    .select("id,owner_id,title,description,price,category,location,image_url,status,created_at")
     .eq("status","active").order("created_at",{ascending:false});
   if (error) {
     document.getElementById("listings").innerHTML = '<div class="empty">Não foi possível carregar os anúncios. Actualize a página ou tente novamente.</div>';
