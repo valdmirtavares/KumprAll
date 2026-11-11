@@ -194,9 +194,35 @@ accountDialog.innerHTML=`
    <button class="btn btn-light" id="myListingsButton">Os meus anúncios</button>
    <button class="btn btn-light" id="viewPublicProfileButton">Ver perfil público</button>
   </div>
+  <section style="margin-top:20px;padding:17px;border:1px solid #e3eee8;border-radius:14px">
+   <h3 style="margin:0 0 7px">Certificação profissional KUMPRALL</h3>
+   <p class="meta" style="margin:0 0 10px">Exclusiva para empresas e vendedores profissionais. Valor previsto: 100 € por ano, após análise e aprovação. A candidatura não activa automaticamente o selo.</p>
+   <div id="verificationSummary" class="note" style="margin-bottom:10px"></div>
+   <button class="btn btn-light" id="verificationApplyButton">Candidatar-me à certificação</button>
+  </section>
   <p id="accountStatus" class="note" style="margin-top:15px" aria-live="polite"></p>
  </div>`;
 document.body.append(accountDialog);
+const verificationDialog=document.createElement("dialog");
+verificationDialog.id="verificationDialog";
+verificationDialog.innerHTML=`
+ <div class="modal-head"><h2>Candidatura profissional</h2><button class="close" id="verificationClose">×</button></div>
+ <form id="verificationForm">
+  <div style="padding:0 20px 20px">
+   <p class="meta">Preencha os dados profissionais. O NIPC e os contactos ficam privados e não aparecem no seu perfil público.</p>
+   <div class="field"><label for="verificationBusinessName">Nome legal da empresa / actividade *</label><input id="verificationBusinessName" maxlength="160" required></div>
+   <div class="field"><label for="verificationTaxId">NIPC / NIF profissional *</label><input id="verificationTaxId" maxlength="30" required autocomplete="off"></div>
+   <div class="form-row">
+    <div class="field"><label for="verificationEmail">E-mail profissional *</label><input id="verificationEmail" type="email" maxlength="254" required></div>
+    <div class="field"><label for="verificationPhone">Telefone profissional *</label><input id="verificationPhone" type="tel" maxlength="40" required></div>
+   </div>
+   <div class="field"><label for="verificationWebsite">Website (opcional)</label><input id="verificationWebsite" type="url" maxlength="300" placeholder="https://"></div>
+   <p class="meta">A candidatura será analisada. Os 100 €/ano só serão cobrados depois de aprovação e através de pagamento seguro. A certificação confirma os dados profissionais verificados, não garante produtos ou transacções.</p>
+   <p id="verificationStatus" class="note" aria-live="polite"></p>
+   <button class="btn btn-primary" type="submit" style="width:100%">Enviar candidatura</button>
+  </div>
+ </form>`;
+document.body.append(verificationDialog);
 const profileDialog=document.createElement("dialog");
 profileDialog.id="profileDialog";
 profileDialog.innerHTML=`
@@ -342,7 +368,42 @@ async function openPublicProfile(userId){
     </article>`).join("")||'<p class="meta">Este utilizador ainda não tem anúncios activos.</p>'}</div>
   </div>`;
 }
-accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();});
+async function loadVerificationRequest(){
+ const box=document.getElementById("verificationSummary");
+ const {data,error}=await supabase.from("kumprall_verification_requests").select("status,created_at,reviewed_at").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
+ if(error){box.textContent="Não foi possível consultar a candidatura. Execute primeiro a actualização da base de dados.";return;}
+ const labels={pending:"Candidatura em análise.",approved:"Candidatura aprovada. O pagamento anual será disponibilizado após validação.",rejected:"Candidatura não aprovada. Contacte o apoio para mais informações."};
+ box.textContent=data?labels[data.status]||"Estado: "+data.status:"Ainda não tem candidatura submetida.";
+ document.getElementById("verificationApplyButton").disabled=!!data&&data.status==="pending";
+}
+document.getElementById("verificationApplyButton").addEventListener("click",async()=>{
+ if(!currentUser)return;
+ const {data,error}=await supabase.from("kumprall_verification_requests").select("id,status").eq("user_id",currentUser.id).eq("status","pending").limit(1).maybeSingle();
+ if(error){document.getElementById("verificationSummary").textContent="A funcionalidade ficará disponível depois de executar a migração SQL.";return;}
+ if(data){document.getElementById("verificationSummary").textContent="Já tem uma candidatura em análise.";return;}
+ document.getElementById("verificationForm").reset();
+ document.getElementById("verificationStatus").textContent="";
+ verificationDialog.showModal();
+});
+document.getElementById("verificationClose").addEventListener("click",()=>verificationDialog.close());
+document.getElementById("verificationForm").addEventListener("submit",async event=>{
+ event.preventDefault();if(!currentUser)return;
+ const button=event.submitter;button.disabled=true;
+ const status=document.getElementById("verificationStatus");status.textContent="A enviar candidatura…";
+ const payload={
+  user_id:currentUser.id,
+  business_name:document.getElementById("verificationBusinessName").value.trim(),
+  business_tax_id:document.getElementById("verificationTaxId").value.trim(),
+  professional_email:document.getElementById("verificationEmail").value.trim(),
+  professional_phone:document.getElementById("verificationPhone").value.trim(),
+  website:document.getElementById("verificationWebsite").value.trim()||null
+ };
+ const {error}=await supabase.from("kumprall_verification_requests").insert(payload);
+ if(error){status.textContent="Não foi possível enviar: "+error.message;}
+ else{status.textContent="Candidatura enviada. A equipa KUMPRALL irá analisá-la.";await loadVerificationRequest();setTimeout(()=>verificationDialog.close(),1200);}
+ button.disabled=false;
+});
+accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();await loadVerificationRequest();});
 document.getElementById("accountClose").addEventListener("click",()=>accountDialog.close());
 document.getElementById("profileClose").addEventListener("click",()=>profileDialog.close());
 document.getElementById("myListingsClose").addEventListener("click",()=>myListingsDialog.close());
