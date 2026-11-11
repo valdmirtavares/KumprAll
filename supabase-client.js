@@ -25,6 +25,23 @@ authDialog.innerHTML = `
   </form>`;
 document.body.append(authDialog);
 
+// Exigir autenticação antes de aceder a Favoritos ou publicar anúncios.
+document.getElementById("favoritesBtn").addEventListener("click", event => {
+  if (currentUser) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  authMessage("Para guardar e consultar favoritos, crie uma conta ou entre na sua conta.");
+  authDialog.showModal();
+}, true);
+
+document.getElementById("openForm").addEventListener("click", event => {
+  if (currentUser) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  authMessage("Para publicar um anúncio na KUMPRALL, crie uma conta ou entre na sua conta.");
+  authDialog.showModal();
+}, true);
+
 const authMessage = (text, error = false) => {
   const el = document.getElementById("authMessage");
   el.textContent = text;
@@ -157,7 +174,7 @@ async function refreshListings() {
 async function updateSession(session) {
   currentUser = session?.user || null;
   authButton.textContent = currentUser ? "A minha conta · Sair" : "Entrar / Registar";
-  document.getElementById("openForm").disabled = !currentUser;
+  document.getElementById("openForm").disabled = false;
   document.getElementById("openForm").title = currentUser ? "Publicar anúncio" : "Entre na sua conta para anunciar";
   await refreshListings();
 }
