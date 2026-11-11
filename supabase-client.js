@@ -207,7 +207,7 @@ profileDialog.innerHTML=`
    <div class="field"><label for="profileRegion">Distrito / Região *</label><input id="profileRegion" maxlength="100" required placeholder="Ex.: Setúbal"></div>
    <div class="field"><label for="profileMunicipality">Concelho / Cidade *</label><input id="profileMunicipality" maxlength="100" required placeholder="Ex.: Barreiro"></div>
   </div>
-  <div class="field"><label for="profileAvatar">Fotografia (URL da imagem)</label><input id="profileAvatar" type="url" placeholder="https://..."></div>
+  <div class="field"><label for="profileAvatar">Fotografia do perfil</label><input id="profileAvatar" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><small class="meta">Escolha uma fotografia directamente do telemóvel ou computador (máx. 5 MB).</small><div id="profileAvatarPreview" style="margin-top:10px;width:88px;height:88px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:32px">👤</div></div>
   <div class="field"><label for="profileBio">Sobre mim</label><textarea id="profileBio" maxlength="500" placeholder="Apresente-se aos compradores…"></textarea></div>
   <p id="profileStatus" class="note" aria-live="polite"></p>
   <button class="btn btn-primary" type="submit" style="width:100%">Guardar perfil</button>
@@ -262,7 +262,8 @@ async function loadOwnProfile(){
  document.getElementById("profileName").value=data?.display_name||"";
  document.getElementById("profileRegion").value=data?.region||"";
  document.getElementById("profileMunicipality").value=data?.municipality||"";
- document.getElementById("profileAvatar").value=data?.avatar_url||"";
+ document.getElementById("profileAvatar").value="";
+  const avatarPreview=document.getElementById("profileAvatarPreview");avatarPreview.innerHTML=avatar?`<img src="${escapeText(avatar)}" alt="Pré-visualização da fotografia" style="width:100%;height:100%;object-fit:cover">`:"👤";
  document.getElementById("profileBio").value=data?.bio||"";
  return data;
 }
@@ -291,7 +292,7 @@ async function showMyListings(){
 async function openPublicProfile(userId){
  const box=document.getElementById("publicProfileContent");box.textContent="A carregar perfil…";publicProfileDialog.showModal();
  const [{data:profile,error:pError},{data:ads,error:aError}]=await Promise.all([
-  supabase.from("kumprall_profiles").select("display_name,location,bio,avatar_url,created_at").eq("user_id",userId).maybeSingle(),
+  supabase.from("kumprall_profiles").select("display_name,location,region,municipality,bio,avatar_url,created_at").eq("user_id",userId).maybeSingle(),
   supabase.from("kumprall_listings").select("id,title,price,category,location,image_url,created_at").eq("owner_id",userId).eq("status","active").order("created_at",{ascending:false})
  ]);
  if(pError||aError){box.textContent="Não foi possível abrir este perfil.";return;}
@@ -317,15 +318,25 @@ document.getElementById("publicProfileClose").addEventListener("click",()=>publi
 document.getElementById("editProfileButton").addEventListener("click",async()=>{await loadOwnProfile();accountDialog.close();profileDialog.showModal();});
 document.getElementById("myListingsButton").addEventListener("click",()=>{accountDialog.close();void showMyListings();});
 document.getElementById("viewPublicProfileButton").addEventListener("click",()=>{accountDialog.close();void openPublicProfile(currentUser.id);});
-document.getElementById("profileForm").addEventListener("submit",async event=>{
+document.getElementById("profileAvatar").addEventListener("change",event=>{const file=event.target.files?.[0];const preview=document.getElementById("profileAvatarPreview");if(!file){preview.textContent="👤";return;}if(!file.type.startsWith("image/")||file.size>5*1024*1024){event.target.value="";preview.textContent="👤";return profileStatus("Escolha uma imagem válida até 5 MB.",true);}const reader=new FileReader();reader.onload=()=>{preview.innerHTML=`<img src="${reader.result}" alt="Pré-visualização" style="width:100%;height:100%;object-fit:cover">`;};reader.readAsDataURL(file);});
+ document.getElementById("profileForm").addEventListener("submit",async event=>{
  event.preventDefault();if(!currentUser)return;
  const display_name=document.getElementById("profileName").value.trim();
  const region=document.getElementById("profileRegion").value.trim();
  const municipality=document.getElementById("profileMunicipality").value.trim();
- const avatar_url=document.getElementById("profileAvatar").value.trim()||null;
+ let avatar_url=cachedProfile?.avatar_url||null;
+ const avatarFile=document.getElementById("profileAvatar").files?.[0];
  const bio=document.getElementById("profileBio").value.trim();
- if(avatar_url&&!/^https?:\/\//i.test(avatar_url))return profileStatus("O endereço da fotografia deve começar por https:// ou http://.",true);
  const button=event.submitter;button.disabled=true;profileStatus("A guardar perfil…");
+ if(avatarFile){
+  if(!avatarFile.type.startsWith("image/")||avatarFile.size>5*1024*1024){button.disabled=false;return profileStatus("Escolha uma imagem válida até 5 MB.",true);}
+  const ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[avatarFile.type];
+  if(!ext){button.disabled=false;return profileStatus("Formato não suportado. Use JPG, PNG, WEBP ou GIF.",true);}
+  const path=`${currentUser.id}/profile/avatar-${Date.now()}.${ext}`;
+  const {error:uploadError}=await supabase.storage.from("kumprall-listing-images").upload(path,avatarFile,{upsert:true,contentType:avatarFile.type});
+  if(uploadError){button.disabled=false;return profileStatus("Não foi possível enviar a fotografia: "+uploadError.message,true);}
+  avatar_url=supabase.storage.from("kumprall-listing-images").getPublicUrl(path).data.publicUrl;
+ }
  const {error}=await supabase.from("kumprall_profiles").upsert({user_id:currentUser.id,display_name,region,municipality,location:municipality+", "+region,bio,avatar_url},{onConflict:"user_id"});
  if(error)profileStatus("Não foi possível guardar: "+error.message,true);
  else{profileStatus("Perfil guardado com sucesso.");await loadOwnProfile();}
