@@ -178,6 +178,202 @@ document.getElementById("chatForm").addEventListener("submit",async event=>{
   button.disabled=false;
 });
 
+
+/* Área de utilizador KUMPRALL: perfil público e gestão dos próprios anúncios. */
+const accountButton=document.createElement("button");
+accountButton.className="btn btn-light";accountButton.id="accountButton";accountButton.textContent="A minha conta";
+accountButton.hidden=true;nav.insertBefore(accountButton,authButton);
+const accountDialog=document.createElement("dialog");
+accountDialog.id="accountDialog";
+accountDialog.innerHTML=`
+ <div class="modal-head"><h2>A minha conta</h2><button class="close" id="accountClose">×</button></div>
+ <div style="padding:20px 23px 24px">
+  <div id="accountSummary" style="display:flex;gap:14px;align-items:center;margin-bottom:18px"></div>
+  <div style="display:flex;gap:9px;flex-wrap:wrap">
+   <button class="btn btn-primary" id="editProfileButton">Criar / editar perfil</button>
+   <button class="btn btn-light" id="myListingsButton">Os meus anúncios</button>
+   <button class="btn btn-light" id="viewPublicProfileButton">Ver perfil público</button>
+  </div>
+  <p id="accountStatus" class="note" style="margin-top:15px" aria-live="polite"></p>
+ </div>`;
+document.body.append(accountDialog);
+const profileDialog=document.createElement("dialog");
+profileDialog.id="profileDialog";
+profileDialog.innerHTML=`
+ <div class="modal-head"><h2>O meu perfil</h2><button class="close" id="profileClose">×</button></div>
+ <form id="profileForm">
+  <div class="field"><label for="profileName">Nome público *</label><input id="profileName" maxlength="80" required placeholder="Como quer ser conhecido"></div>
+  <div class="field"><label for="profileLocation">Localidade</label><input id="profileLocation" maxlength="100" placeholder="Ex.: Lisboa"></div>
+  <div class="field"><label for="profileAvatar">Fotografia (URL da imagem)</label><input id="profileAvatar" type="url" placeholder="https://..."></div>
+  <div class="field"><label for="profileBio">Sobre mim</label><textarea id="profileBio" maxlength="500" placeholder="Apresente-se aos compradores…"></textarea></div>
+  <p id="profileStatus" class="note" aria-live="polite"></p>
+  <button class="btn btn-primary" type="submit" style="width:100%">Guardar perfil</button>
+ </form>`;
+document.body.append(profileDialog);
+const myListingsDialog=document.createElement("dialog");
+myListingsDialog.id="myListingsDialog";
+myListingsDialog.innerHTML=`
+ <div class="modal-head"><h2>Os meus anúncios</h2><button class="close" id="myListingsClose">×</button></div>
+ <div id="myListingsContent" style="padding:18px 20px;max-height:70vh;overflow:auto"></div>`;
+document.body.append(myListingsDialog);
+const editListingDialog=document.createElement("dialog");
+editListingDialog.id="editListingDialog";
+editListingDialog.innerHTML=`
+ <div class="modal-head"><h2>Editar anúncio</h2><button class="close" id="editListingClose">×</button></div>
+ <form id="editListingForm">
+  <input id="editListingId" type="hidden">
+  <div class="field"><label for="editTitle">Título *</label><input id="editTitle" maxlength="90" required></div>
+  <div class="form-row">
+   <div class="field"><label for="editPrice">Preço (€) *</label><input id="editPrice" type="number" min="0" step="0.01" required></div>
+   <div class="field"><label for="editCategory">Categoria *</label><select id="editCategory" required></select></div>
+  </div>
+  <div class="field"><label for="editLocation">Localidade *</label><input id="editLocation" required maxlength="100"></div>
+  <div class="field"><label for="editDescription">Descrição</label><textarea id="editDescription" maxlength="2000"></textarea></div>
+  <div class="field"><label for="editImage">Imagem principal (URL)</label><input id="editImage" type="url" placeholder="https://..."></div>
+  <p id="editListingStatus" class="note" aria-live="polite"></p>
+  <button class="btn btn-primary" type="submit" style="width:100%">Guardar alterações</button>
+ </form>`;
+document.body.append(editListingDialog);
+const publicProfileDialog=document.createElement("dialog");
+publicProfileDialog.id="publicProfileDialog";
+publicProfileDialog.innerHTML=`
+ <div class="modal-head"><h2>Perfil do vendedor</h2><button class="close" id="publicProfileClose">×</button></div>
+ <div id="publicProfileContent" style="padding:20px 23px 24px"></div>`;
+document.body.append(publicProfileDialog);
+let cachedProfile=null;
+let editingListingId=null;
+const profileStatus=(message,error=false)=>{const el=document.getElementById("profileStatus");el.textContent=message;el.style.color=error?"#b42318":"#087B59";};
+async function loadOwnProfile(){
+ if(!currentUser)return null;
+ const {data,error}=await supabase.from("kumprall_profiles").select("*").eq("user_id",currentUser.id).maybeSingle();
+ if(error){document.getElementById("accountStatus").textContent="Não foi possível carregar o perfil: "+error.message;return null;}
+ cachedProfile=data;
+ const name=data?.display_name||currentUser.email?.split("@")[0]||"Utilizador KUMPRALL";
+ const avatar=data?.avatar_url;
+ document.getElementById("accountSummary").innerHTML=`
+  <div style="width:64px;height:64px;flex:0 0 64px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:25px">${avatar?`<img src="${escapeText(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover">`:"👤"}</div>
+  <div><strong style="font-size:18px">${escapeText(name)}</strong><div class="meta">${escapeText(data?.location||"Adicione a sua localidade")}</div><div class="meta">Membro KUMPRALL</div></div>`;
+ document.getElementById("profileName").value=data?.display_name||"";
+ document.getElementById("profileLocation").value=data?.location||"";
+ document.getElementById("profileAvatar").value=data?.avatar_url||"";
+ document.getElementById("profileBio").value=data?.bio||"";
+ return data;
+}
+async function showMyListings(){
+ if(!currentUser)return;
+ myListingsDialog.showModal();
+ const box=document.getElementById("myListingsContent");
+ box.textContent="A carregar os seus anúncios…";
+ const {data,error}=await supabase.from("kumprall_listings")
+  .select("id,title,price,category,location,description,image_url,status,created_at")
+  .eq("owner_id",currentUser.id).order("created_at",{ascending:false});
+ if(error){box.textContent="Erro ao carregar anúncios: "+error.message;return;}
+ if(!data.length){box.innerHTML='<div class="empty">Ainda não publicou anúncios. Clique em «Anunciar» para começar.</div>';return;}
+ box.innerHTML=data.map(item=>`
+  <article style="display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #e5eee8">
+   <div style="width:76px;height:68px;flex:0 0 76px;border-radius:10px;overflow:hidden;background:#edf5f0;display:grid;place-items:center">${item.image_url?`<img src="${escapeText(item.image_url)}" style="width:100%;height:100%;object-fit:cover" alt="">`:"📦"}</div>
+   <div style="flex:1;min-width:0"><strong>${escapeText(item.title)}</strong><div style="font-weight:800;color:#087B59">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(item.price))}</div><div class="meta">${escapeText(item.location)} · ${escapeText(item.category)} · ${item.status==="active"?"Activo":item.status==="sold"?"Vendido":"Inactivo"}</div>
+   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+    <button class="btn btn-light" data-edit-listing="${item.id}" style="padding:7px 10px">Editar</button>
+    ${item.status==="active"?'<button class="btn btn-light" data-listing-status="sold" data-id="'+item.id+'" style="padding:7px 10px">Marcar vendido</button>':'<button class="btn btn-light" data-listing-status="active" data-id="'+item.id+'" style="padding:7px 10px">Reactivar</button>'}
+    <button class="btn btn-light" data-listing-status="archived" data-id="${item.id}" style="padding:7px 10px">Desactivar</button>
+    <button class="btn" data-delete-listing="${item.id}" style="padding:7px 10px;color:#b42318;background:#fff0f0">Eliminar</button>
+   </div></div>
+  </article>`).join("");
+}
+async function openPublicProfile(userId){
+ const box=document.getElementById("publicProfileContent");box.textContent="A carregar perfil…";publicProfileDialog.showModal();
+ const [{data:profile,error:pError},{data:ads,error:aError}]=await Promise.all([
+  supabase.from("kumprall_profiles").select("display_name,location,bio,avatar_url,created_at").eq("user_id",userId).maybeSingle(),
+  supabase.from("kumprall_listings").select("id,title,price,category,location,image_url,created_at").eq("owner_id",userId).eq("status","active").order("created_at",{ascending:false})
+ ]);
+ if(pError||aError){box.textContent="Não foi possível abrir este perfil.";return;}
+ const display=profile?.display_name||"Vendedor KUMPRALL";
+ box.innerHTML=`
+  <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+   <div style="width:72px;height:72px;flex:0 0 72px;border-radius:50%;overflow:hidden;background:#e8f5ed;display:grid;place-items:center;font-size:28px">${profile?.avatar_url?`<img src="${escapeText(profile.avatar_url)}" style="width:100%;height:100%;object-fit:cover" alt="">`:"👤"}</div>
+   <div><h3 style="margin:0 0 4px">${escapeText(display)}</h3><div class="meta">${escapeText(profile?.location||"Portugal")} · Membro KUMPRALL</div></div>
+  </div>
+  <p style="white-space:pre-wrap;color:#526C60">${escapeText(profile?.bio||"Este vendedor ainda não adicionou uma apresentação.")}</p>
+  <h3>Anúncios activos (${ads.length})</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">${ads.map(ad=>`
+   <article style="border:1px solid #e5eee8;border-radius:12px;overflow:hidden">
+    ${ad.image_url?`<img src="${escapeText(ad.image_url)}" style="width:100%;height:100px;object-fit:cover" alt="">`:'<div style="height:100px;background:#edf5f0;display:grid;place-items:center">📦</div>'}
+    <div style="padding:9px"><strong>${escapeText(ad.title)}</strong><div style="color:#087B59;font-weight:800">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(Number(ad.price))}</div><div class="meta">${escapeText(ad.location)}</div></div>
+   </article>`).join("")||'<p class="meta">Este vendedor ainda não tem anúncios activos.</p>'}</div>`;
+}
+accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();});
+document.getElementById("accountClose").addEventListener("click",()=>accountDialog.close());
+document.getElementById("profileClose").addEventListener("click",()=>profileDialog.close());
+document.getElementById("myListingsClose").addEventListener("click",()=>myListingsDialog.close());
+document.getElementById("publicProfileClose").addEventListener("click",()=>publicProfileDialog.close());
+document.getElementById("editProfileButton").addEventListener("click",async()=>{await loadOwnProfile();accountDialog.close();profileDialog.showModal();});
+document.getElementById("myListingsButton").addEventListener("click",()=>{accountDialog.close();void showMyListings();});
+document.getElementById("viewPublicProfileButton").addEventListener("click",()=>{accountDialog.close();void openPublicProfile(currentUser.id);});
+document.getElementById("profileForm").addEventListener("submit",async event=>{
+ event.preventDefault();if(!currentUser)return;
+ const display_name=document.getElementById("profileName").value.trim();
+ const location=document.getElementById("profileLocation").value.trim();
+ const avatar_url=document.getElementById("profileAvatar").value.trim()||null;
+ const bio=document.getElementById("profileBio").value.trim();
+ if(avatar_url&&!/^https?:\/\//i.test(avatar_url))return profileStatus("O endereço da fotografia deve começar por https:// ou http://.",true);
+ const button=event.submitter;button.disabled=true;profileStatus("A guardar perfil…");
+ const {error}=await supabase.from("kumprall_profiles").upsert({user_id:currentUser.id,display_name,location,bio,avatar_url},{onConflict:"user_id"});
+ if(error)profileStatus("Não foi possível guardar: "+error.message,true);
+ else{profileStatus("Perfil guardado com sucesso.");await loadOwnProfile();}
+ button.disabled=false;
+});
+document.getElementById("myListingsContent").addEventListener("click",async event=>{
+ const edit=event.target.closest("[data-edit-listing]");
+ if(edit){
+  const item=databaseListings.find(x=>String(x.id)===edit.dataset.editListing) || (await supabase.from("kumprall_listings").select("*").eq("id",edit.dataset.editListing).eq("owner_id",currentUser.id).single()).data;
+  if(!item)return;
+  editingListingId=item.id;
+  document.getElementById("editListingId").value=item.id;
+  document.getElementById("editTitle").value=item.title;
+  document.getElementById("editPrice").value=item.price;
+  document.getElementById("editLocation").value=item.location;
+  document.getElementById("editDescription").value=item.description||"";
+  document.getElementById("editImage").value=item.image_url||item.image||"";
+  document.getElementById("editCategory").innerHTML=[...new Set(["Veículos","Imóveis","Eletrónica","Casa e Jardim","Moda","Desporto","Lazer",item.category])].map(v=>'<option value="'+escapeText(v)+'">'+escapeText(v)+'</option>').join("");
+  document.getElementById("editCategory").value=item.category;
+  myListingsDialog.close();editListingDialog.showModal();return;
+ }
+ const statusButton=event.target.closest("[data-listing-status]");
+ if(statusButton){
+  statusButton.disabled=true;
+  const {error}=await supabase.from("kumprall_listings").update({status:statusButton.dataset.listingStatus}).eq("id",statusButton.dataset.id).eq("owner_id",currentUser.id);
+  if(error)alert("Não foi possível alterar o estado: "+error.message);
+  await showMyListings();await refreshListings();return;
+ }
+ const del=event.target.closest("[data-delete-listing]");
+ if(del&&confirm("Tem a certeza de que pretende eliminar definitivamente este anúncio?")){
+  del.disabled=true;
+  const {error}=await supabase.from("kumprall_listings").delete().eq("id",del.dataset.deleteListing).eq("owner_id",currentUser.id);
+  if(error)alert("Não foi possível eliminar: "+error.message);
+  await showMyListings();await refreshListings();
+ }
+});
+document.getElementById("editListingClose").addEventListener("click",()=>editListingDialog.close());
+document.getElementById("editListingForm").addEventListener("submit",async event=>{
+ event.preventDefault();if(!currentUser||!editingListingId)return;
+ const image=document.getElementById("editImage").value.trim()||null;
+ if(image&&!/^https?:\/\//i.test(image)){document.getElementById("editListingStatus").textContent="O endereço da imagem deve começar por https:// ou http://.";return;}
+ const button=event.submitter;button.disabled=true;
+ document.getElementById("editListingStatus").textContent="A guardar alterações…";
+ const {error}=await supabase.from("kumprall_listings").update({
+  title:document.getElementById("editTitle").value.trim(),
+  price:Number(document.getElementById("editPrice").value),
+  category:document.getElementById("editCategory").value,
+  location:document.getElementById("editLocation").value.trim(),
+  description:document.getElementById("editDescription").value.trim(),
+  image_url:image
+ }).eq("id",editingListingId).eq("owner_id",currentUser.id);
+ if(error)document.getElementById("editListingStatus").textContent="Erro: "+error.message;
+ else{document.getElementById("editListingStatus").textContent="Anúncio actualizado.";editListingDialog.close();await refreshListings();await showMyListings();}
+ button.disabled=false;
+});
+
 function openListingDetails(id) {
   const item = databaseListings.find(listing => String(listing.id) === String(id));
   if (!item) return;
@@ -189,11 +385,13 @@ function openListingDetails(id) {
     ${image}
     <div style="font-size:25px;font-weight:850;color:#087B59;margin-bottom:8px">${new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(item.price)}</div>
     <p style="color:#64766F;margin:0 0 12px">${escapeText(item.location)} · ${escapeText(item.category)}</p>
+    <button class="btn btn-light" id="openSellerProfile" style="margin-bottom:14px">Ver perfil do vendedor</button>
     <h3 style="margin:0 0 7px">Descrição</h3>
     <p style="white-space:pre-wrap;line-height:1.6;margin:0 0 18px">${escapeText(item.description || "O vendedor não adicionou uma descrição.")}</p>
     <button class="btn btn-primary" id="contactSellerButton" style="width:100%">Enviar mensagem ao vendedor</button>
     <p class="note" style="margin:10px 0 0">Negocie com segurança através das mensagens da KUMPRALL.</p>`;
   document.getElementById("contactSellerButton").addEventListener("click", () => startConversation(item));
+  document.getElementById("openSellerProfile").addEventListener("click", () => openPublicProfile(item.owner_id));
   detailDialog.showModal();
 }
 
@@ -241,7 +439,8 @@ async function refreshListings() {
 }
 async function updateSession(session) {
   currentUser = session?.user || null;
-  authButton.textContent = currentUser ? "A minha conta · Sair" : "Entrar / Registar";
+  authButton.textContent = currentUser ? "Sair" : "Entrar / Registar";
+  accountButton.hidden = !currentUser;
   document.getElementById("openForm").disabled = false;
   document.getElementById("openForm").title = currentUser ? "Publicar anúncio" : "Entre na sua conta para anunciar";
   await refreshListings();
