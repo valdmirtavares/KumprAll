@@ -251,6 +251,11 @@ form.addEventListener("submit", async event => {
   }
 }, true);
 
+listingGrid.addEventListener("click", event => {
+  const card = event.target.closest("[data-listing-id]");
+  if (!card) return;
+  openListingDetails(card.dataset.listingId);
+});
 listingGrid.addEventListener("keydown", event => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-listing-id]")) {
     event.preventDefault();
