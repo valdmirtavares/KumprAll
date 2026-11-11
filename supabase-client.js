@@ -51,6 +51,7 @@ const authMessage = (text, error = false) => {
 let currentUser = null;
 let databaseListings = [];
 let previewUrls = [];
+let listingsRequestVersion = 0;
 
 const form = document.getElementById("listingForm");
 const imageField = form.querySelector("#image");
@@ -197,7 +198,10 @@ function openListingDetails(id) {
 }
 
 function showListings(rows) {
-  databaseListings = (rows || []).map(row => ({
+  // Deduplicar pelo ID real da base de dados. Nunca usar título/preço como chave,
+  // porque vendedores diferentes podem publicar produtos semelhantes.
+  const uniqueRows = [...new Map((rows || []).filter(row => row?.id).map(row => [String(row.id), row])).values()];
+  databaseListings = uniqueRows.map(row => ({
     id: row.id, owner_id: row.owner_id, title: row.title, price: Number(row.price), category: row.category,
     location: row.location, description: row.description || "",
     image: row.image_url || "", date: new Date(row.created_at).getTime()
@@ -222,9 +226,12 @@ function showListings(rows) {
     </article>`).join("") : '<div class="empty">Ainda não existem anúncios publicados. Seja o primeiro a anunciar!</div>';
 }
 async function refreshListings() {
+  // Ignora respostas antigas se duas actualizações forem iniciadas quase ao mesmo tempo.
+  const requestVersion = ++listingsRequestVersion;
   const { data, error } = await supabase.from("kumprall_listings")
     .select("id,owner_id,title,description,price,category,location,image_url,status,created_at")
-    .eq("status","active").order("created_at",{ascending:false});
+    .eq("status","active").order("created_at",{ascending:false}).limit(200);
+  if (requestVersion !== listingsRequestVersion) return;
   if (error) {
     document.getElementById("listings").innerHTML = '<div class="empty">Não foi possível carregar os anúncios. Actualize a página ou tente novamente.</div>';
     console.error("KUMPRALL refresh listings:", error);
