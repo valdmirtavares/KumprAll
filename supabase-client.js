@@ -655,14 +655,14 @@ document.getElementById("registerButton").addEventListener("click", async () => 
   const email = document.getElementById("authEmail").value.trim();
   const password = document.getElementById("authPassword").value;
   if (!email || password.length < 6) return authMessage("Indique um e-mail e uma palavra-passe com pelo menos 6 caracteres.", true);
-  const { error } = await supabase.auth.signUp({email,password,options:{emailRedirectTo:"https://kumprall.vercel.app"}});
+  const { error } = await supabase.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});
   if (error) return authMessage(error.message, true);
   authMessage("Pedido enviado. Consulte o seu e-mail para confirmar a conta.");
 });
 document.getElementById("resetButton").addEventListener("click", async () => {
   const email = document.getElementById("authEmail").value.trim();
   if (!email) return authMessage("Indique primeiro o seu e-mail.", true);
-  const { error } = await supabase.auth.resetPasswordForEmail(email,{redirectTo:"https://kumprall.vercel.app"});
+  const { error } = await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});
   authMessage(error ? error.message : "Se a conta existir, receberá um e-mail para redefinir a palavra-passe.", !!error);
 });
 
