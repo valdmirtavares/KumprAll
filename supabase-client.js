@@ -425,19 +425,30 @@ async function loadVerificationRequest(){
  payButton.hidden=!(data&&data.status==="approved"&&data.payment_status!=="paid");
 }
 document.getElementById("verificationPayButton").addEventListener("click",async event=>{
+ event.preventDefault();
  const button=event.currentTarget;
- if(!currentUser)return;
- button.disabled=true;button.textContent="A preparar pagamento…";
+ const summary=document.getElementById("verificationSummary");
+ if(!currentUser){
+  summary.textContent="A sua sessão não está activa. Entre novamente na sua conta para continuar.";
+  authMessage("Entre novamente na sua conta para efectuar o pagamento.",true);
+  authDialog.showModal();
+  return;
+ }
+ button.disabled=true;
+ button.textContent="A preparar pagamento…";
+ summary.textContent="A ligar ao pagamento seguro da Stripe…";
  try{
   const {data:{session},error}=await supabase.auth.getSession();
-  if(error||!session?.access_token)throw new Error("A sessão expirou. Entre novamente.");
+  if(error)throw error;
+  if(!session?.access_token)throw new Error("A sessão expirou. Entre novamente na sua conta.");
   const response=await fetch("/api/certification-checkout",{method:"POST",headers:{Authorization:"Bearer "+session.access_token}});
-  const result=await response.json();
-  if(!response.ok||!result.url)throw new Error(result.error||"Não foi possível iniciar o pagamento.");
-  window.location.href=result.url;
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||!result.url)throw new Error(result.error||"O serviço de pagamento não respondeu correctamente. Tente novamente.");
+  window.location.assign(result.url);
  }catch(error){
-  document.getElementById("verificationSummary").textContent=error.message;
-  button.disabled=false;button.textContent="Pagar 100 € / ano";
+  summary.textContent="Não foi possível iniciar o pagamento: "+(error?.message||"erro desconhecido");
+  button.disabled=false;
+  button.textContent="Tentar novamente — 100 € / ano";
  }
 });
 document.getElementById("verificationApplyButton").addEventListener("click",async()=>{
