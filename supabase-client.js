@@ -200,6 +200,7 @@ accountDialog.innerHTML=`
    <p class="meta" style="margin:0 0 10px">Exclusiva para empresas e vendedores profissionais. Valor previsto: 100 € por ano, após análise e aprovação. A candidatura não activa automaticamente o selo.</p>
    <div id="verificationSummary" class="note" style="margin-bottom:10px"></div>
    <button class="btn btn-light" id="verificationApplyButton">Candidatar-me à certificação</button>
+   <button class="btn btn-primary" id="verificationPayButton" hidden style="margin-left:8px">Pagar 100 € / ano</button>
   </section>
   <p id="accountStatus" class="note" style="margin-top:15px" aria-live="polite"></p>
  </div>`;
@@ -414,12 +415,31 @@ document.getElementById("adminRequests").addEventListener("click",async event=>{
 });
 async function loadVerificationRequest(){
  const box=document.getElementById("verificationSummary");
- const {data,error}=await supabase.from("kumprall_verification_requests").select("status,created_at,reviewed_at").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
- if(error){box.textContent="Não foi possível consultar a candidatura. Execute primeiro a actualização da base de dados.";return;}
- const labels={pending:"Candidatura em análise.",approved:"Candidatura aprovada. O pagamento anual será disponibilizado após validação.",rejected:"Candidatura não aprovada. Contacte o apoio para mais informações."};
- box.textContent=data?labels[data.status]||"Estado: "+data.status:"Ainda não tem candidatura submetida.";
- document.getElementById("verificationApplyButton").disabled=!!data&&data.status==="pending";
+ const payButton=document.getElementById("verificationPayButton");
+ const {data,error}=await supabase.from("kumprall_verification_requests").select("status,payment_status,certification_paid_until,created_at,reviewed_at").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
+ if(error){box.textContent="Não foi possível consultar a candidatura. Execute primeiro a actualização da base de dados.";payButton.hidden=true;return;}
+ const labels={pending:"Candidatura em análise.",approved:"Candidatura aprovada. Pode avançar para o pagamento anual de 100 €.",rejected:"Candidatura não aprovada. Contacte o apoio para mais informações."};
+ if(data?.payment_status==="paid"&&data.certification_paid_until){box.textContent="Certificação paga e activa até "+new Date(data.certification_paid_until).toLocaleDateString("pt-PT")+".";
+ }else{box.textContent=data?labels[data.status]||"Estado: "+data.status:"Ainda não tem candidatura submetida.";}
+ document.getElementById("verificationApplyButton").disabled=!!data&&(data.status==="pending"||data.status==="approved");
+ payButton.hidden=!(data&&data.status==="approved"&&data.payment_status!=="paid");
 }
+document.getElementById("verificationPayButton").addEventListener("click",async event=>{
+ const button=event.currentTarget;
+ if(!currentUser)return;
+ button.disabled=true;button.textContent="A preparar pagamento…";
+ try{
+  const {data:{session},error}=await supabase.auth.getSession();
+  if(error||!session?.access_token)throw new Error("A sessão expirou. Entre novamente.");
+  const response=await fetch("/api/certification-checkout",{method:"POST",headers:{Authorization:"Bearer "+session.access_token}});
+  const result=await response.json();
+  if(!response.ok||!result.url)throw new Error(result.error||"Não foi possível iniciar o pagamento.");
+  window.location.href=result.url;
+ }catch(error){
+  document.getElementById("verificationSummary").textContent=error.message;
+  button.disabled=false;button.textContent="Pagar 100 € / ano";
+ }
+});
 document.getElementById("verificationApplyButton").addEventListener("click",async()=>{
  if(!currentUser)return;
  const {data,error}=await supabase.from("kumprall_verification_requests").select("id,status").eq("user_id",currentUser.id).eq("status","pending").limit(1).maybeSingle();
