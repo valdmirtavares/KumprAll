@@ -11,6 +11,15 @@ create unique index if not exists kumprall_verification_checkout_session_uidx
   on public.kumprall_verification_requests(stripe_checkout_session_id)
   where stripe_checkout_session_id is not null;
 
+-- Remove any badge granted by the earlier test-only approval flow when no payment exists.
+update public.kumprall_profiles p
+set verification_status='pending', verified_at=null, verification_expires_at=null
+where p.verification_status='verified'
+  and exists (
+    select 1 from public.kumprall_verification_requests v
+    where v.user_id=p.user_id and v.status='approved' and v.payment_status='unpaid'
+  );
+
 -- Approval authorizes payment; it must NOT activate the public verification badge.
 create or replace function public.kumprall_review_verification_request(
   p_request_id uuid,
