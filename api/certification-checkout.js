@@ -87,9 +87,11 @@ module.exports = async (req, res) => {
     }
 
     const forwardedHost = req.headers["x-forwarded-host"] || req.headers.host || "";
-    const origin = req.headers.origin && /^https:\/\/[a-z0-9.-]+\.vercel\.app$/i.test(req.headers.origin)
+    const allowedOrigins = new Set(["https://kumprall.com", "https://www.kumprall.com"]);
+    const origin = req.headers.origin && (allowedOrigins.has(req.headers.origin) || /^https:\/\/[a-z0-9.-]+\.vercel\.app$/i.test(req.headers.origin))
       ? req.headers.origin
-      : /^([a-z0-9.-]+\.vercel\.app)$/i.test(forwardedHost) ? "https://" + forwardedHost : "https://kumprall.vercel.app";
+      : allowedOrigins.has("https://" + forwardedHost) ? "https://" + forwardedHost
+      : /^([a-z0-9.-]+\.vercel\.app)$/i.test(forwardedHost) ? "https://" + forwardedHost : "https://kumprall.com";
 
     const params = new URLSearchParams();
     params.set("mode", "subscription");
