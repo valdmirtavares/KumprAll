@@ -193,6 +193,7 @@ accountDialog.innerHTML=`
    <button class="btn btn-primary" id="editProfileButton">Criar / editar perfil</button>
    <button class="btn btn-light" id="myListingsButton">Os meus anúncios</button>
    <button class="btn btn-light" id="viewPublicProfileButton">Ver perfil público</button>
+   <button class="btn btn-light" id="adminPanelButton" hidden>Administração KUMPRALL</button>
   </div>
   <section style="margin-top:20px;padding:17px;border:1px solid #e3eee8;border-radius:14px">
    <h3 style="margin:0 0 7px">Certificação profissional KUMPRALL</h3>
@@ -223,6 +224,12 @@ verificationDialog.innerHTML=`
   </div>
  </form>`;
 document.body.append(verificationDialog);
+const adminDialog=document.createElement("dialog");
+adminDialog.id="adminDialog";
+adminDialog.innerHTML=`
+ <div class="modal-head"><h2>Administração KUMPRALL</h2><button class="close" id="adminClose">×</button></div>
+ <div id="adminRequests" style="padding:18px 20px;max-height:72vh;overflow:auto"></div>`;
+document.body.append(adminDialog);
 const profileDialog=document.createElement("dialog");
 profileDialog.id="profileDialog";
 profileDialog.innerHTML=`
@@ -368,6 +375,43 @@ async function openPublicProfile(userId){
     </article>`).join("")||'<p class="meta">Este utilizador ainda não tem anúncios activos.</p>'}</div>
   </div>`;
 }
+async function refreshAdminAccess(){
+ const button=document.getElementById("adminPanelButton");
+ button.hidden=true;
+ if(!currentUser)return;
+ const {data,error}=await supabase.rpc("kumprall_is_admin");
+ if(!error&&data===true)button.hidden=false;
+}
+async function loadAdminRequests(){
+ const box=document.getElementById("adminRequests");
+ box.textContent="A carregar candidaturas…";
+ const {data,error}=await supabase.from("kumprall_verification_requests")
+  .select("id,user_id,business_name,business_tax_id,professional_email,professional_phone,website,status,created_at,reviewed_at")
+  .order("created_at",{ascending:false}).limit(100);
+ if(error){box.textContent="Não foi possível carregar: "+error.message;return;}
+ if(!data.length){box.textContent="Ainda não existem candidaturas.";return;}
+ box.innerHTML=data.map(item=>`
+  <article style="padding:15px 0;border-bottom:1px solid #e3eee8">
+   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>${escapeText(item.business_name)}</strong><span class="meta">${escapeText(item.status)}</span></div>
+   <div class="meta">NIPC/NIF: ${escapeText(item.business_tax_id)} · Pedido: ${new Date(item.created_at).toLocaleString("pt-PT")}</div>
+   <div style="margin-top:7px">E-mail: ${escapeText(item.professional_email)} · Telefone: ${escapeText(item.professional_phone)}</div>
+   ${item.website?`<div>Website: <a href="${escapeText(item.website)}" target="_blank" rel="noopener noreferrer">${escapeText(item.website)}</a></div>`:""}
+   ${item.status==="pending"?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <button class="btn btn-primary" data-review-id="${item.id}" data-review-decision="approved">Aprovar</button>
+    <button class="btn btn-light" data-review-id="${item.id}" data-review-decision="rejected">Recusar</button>
+   </div>`:""}
+  </article>`).join("");
+}
+document.getElementById("adminPanelButton").addEventListener("click",async()=>{accountDialog.close();adminDialog.showModal();await loadAdminRequests();});
+document.getElementById("adminClose").addEventListener("click",()=>adminDialog.close());
+document.getElementById("adminRequests").addEventListener("click",async event=>{
+ const button=event.target.closest("[data-review-id]");
+ if(!button||!confirm(button.dataset.reviewDecision==="approved"?"Aprovar esta candidatura? O certificado ficará activo por 12 meses após validação?":"Recusar esta candidatura?"))return;
+ button.disabled=true;
+ const {error}=await supabase.rpc("kumprall_review_verification_request",{p_request_id:button.dataset.reviewId,p_decision:button.dataset.reviewDecision,p_admin_notes:null});
+ if(error){alert("Não foi possível registar a decisão: "+error.message);button.disabled=false;return;}
+ await loadAdminRequests();
+});
 async function loadVerificationRequest(){
  const box=document.getElementById("verificationSummary");
  const {data,error}=await supabase.from("kumprall_verification_requests").select("status,created_at,reviewed_at").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
@@ -403,7 +447,7 @@ document.getElementById("verificationForm").addEventListener("submit",async even
  else{status.textContent="Candidatura enviada. A equipa KUMPRALL irá analisá-la.";await loadVerificationRequest();setTimeout(()=>verificationDialog.close(),1200);}
  button.disabled=false;
 });
-accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();await loadVerificationRequest();});
+accountButton.addEventListener("click",async()=>{if(!currentUser)return;accountDialog.showModal();await loadOwnProfile();await loadVerificationRequest();await refreshAdminAccess();});
 document.getElementById("accountClose").addEventListener("click",()=>accountDialog.close());
 document.getElementById("profileClose").addEventListener("click",()=>profileDialog.close());
 document.getElementById("myListingsClose").addEventListener("click",()=>myListingsDialog.close());
@@ -556,6 +600,7 @@ async function updateSession(session) {
   currentUser = session?.user || null;
   authButton.textContent = currentUser ? "Sair" : "Entrar / Registar";
   accountButton.hidden = !currentUser;
+  document.getElementById("adminPanelButton").hidden = true;
   document.getElementById("openForm").disabled = false;
   document.getElementById("openForm").title = currentUser ? "Publicar anúncio" : "Entre na sua conta para anunciar";
   await refreshListings();
