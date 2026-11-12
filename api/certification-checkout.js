@@ -2,7 +2,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.URL_SUPABASE;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const STRIPE_PRODUCT_ID = "prod_Vc0BNHjf8Ea6X";
+const STRIPE_PRODUCT_ID = process.env.STRIPE_CERTIFICATION_PRODUCT_ID;
 
 function send(res, status, body) {
   res.statusCode = status;
@@ -12,7 +12,7 @@ function send(res, status, body) {
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return send(res, 405, { error: "Método não permitido." });
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY || !STRIPE_PRODUCT_ID) {
     return send(res, 500, { error: "A integração ainda não está totalmente configurada no ambiente Preview." });
   }
   const auth = req.headers.authorization || "";
